@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 from pathlib import Path
-
 import re
 from typing import Optional
 import urllib.request
@@ -17,9 +16,25 @@ def read_packages() -> list[str]:
     with open(ROOT / 'packages.txt', 'r') as f:
         return [l.strip() for l in f.readlines() if l.strip() and not l.startswith('#')]
 
-def fetch_aur_pkgbuild(pkg: str) -> str:
-    with urllib.request.urlopen(f'https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h={pkg}') as f:
-        return f.read().decode('utf-8')
+def fetch_arch_pkgbuild(pkg: str) -> Optional[str]:
+    try:
+        with urllib.request.urlopen(f'https://gitlab.archlinux.org/archlinux/packaging/packages/-/raw/main/{pkg}/PKGBUILD') as f:
+            return f.read().decode('utf-8')
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return None  # Package not found in Arch Linux repositories
+        else:
+            raise
+
+def fetch_aur_pkgbuild(pkg: str) -> Optional[str]:
+    try:
+        with urllib.request.urlopen(f'https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h={pkg}') as f:
+            return f.read().decode('utf-8')
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return None  # Package not found in AUR
+        else:
+            raise
 
 def read_local_pkgbuild(pkg: str) -> str:
     with open(ROOT / pkg / 'PKGBUILD', 'r') as f:
@@ -42,14 +57,24 @@ def main():
 
     print('==> Updating packages')
     for pkg in pkgs:
-        aur_pkgbuild = fetch_aur_pkgbuild(pkg)
+        arch_pkgbuild = fetch_arch_pkgbuild(pkg)
+        if arch_pkgbuild is not None:
+            pkgbuild = arch_pkgbuild
+        else:
+            aur_pkgbuild = fetch_aur_pkgbuild(pkg)
+            if aur_pkgbuild is None:
+                print(f'{pkg}: Package not found in Arch Linux repositories or AUR')
+                continue
+            else:
+                pkgbuild = aur_pkgbuild
+
         local_pkgbuild = read_local_pkgbuild(pkg)
 
         local_pkgver = parse(PKGVER, local_pkgbuild)
         local_pkgrel = parse(PKGREL, local_pkgbuild)
 
-        aur_pkgver = parse(PKGVER, aur_pkgbuild)
-        aur_pkgrel = parse(PKGREL, aur_pkgbuild)
+        aur_pkgver = parse(PKGVER, pkgbuild)
+        aur_pkgrel = parse(PKGREL, pkgbuild)
 
         local_verrel = f'{local_pkgver}-{local_pkgrel}'
         aur_verrel = f'{aur_pkgver}-{aur_pkgrel}'
