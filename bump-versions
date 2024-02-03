@@ -17,15 +17,14 @@ def read_packages() -> list[str]:
     with open(ROOT / 'packages.txt', 'r') as f:
         return [l.strip() for l in f.readlines() if l.strip() and not l.startswith('#')]
 
-def fetch_pkgbuild(pkg: str) -> Optional[str]:
-    try:
-        with urllib.request.urlopen(f'https://gitlab.archlinux.org/archlinux/packaging/packages/{pkg}/-/raw/main/PKGBUILD') as f:
-            return f.read().decode('utf-8')
-    except urllib.error.HTTPError:
-        print(f'PKGBUILD for {pkg} not found on GitLab, trying AUR')
-        return fetch_aur_pkgbuild(pkg)
+def fetch_pkgbuild(pkg: str) -> str:
+    # First try fetching PKGBUILD from Arch Linux GitLab
+    with urllib.request.urlopen(f'https://gitlab.archlinux.org/archlinux/packaging/packages/{pkg}/-/raw/main/PKGBUILD') as f:
+        pkgbuild = f.read().decode('utf-8')
+        if 'pkgver' in pkgbuild and 'pkgrel' in pkgbuild:
+            return pkgbuild
 
-def fetch_aur_pkgbuild(pkg: str) -> str:
+    # If PKGBUILD is not found on Arch Linux GitLab or doesn't contain expected information, try fetching from AUR
     with urllib.request.urlopen(f'https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h={pkg}') as f:
         return f.read().decode('utf-8')
 
@@ -33,9 +32,9 @@ def read_local_pkgbuild(pkg: str) -> str:
     with open(ROOT / pkg / 'PKGBUILD', 'r') as f:
         return f.read()
 
-def write_local_pkgbuild(pkgbuild: str, pkg: str) -> None:
+def write_local_pkgbuild(pkgbuild: str, pkg: str) -> str:
     with open(ROOT / pkg / 'PKGBUILD', 'w') as f:
-        f.write(pkgbuild)
+        return f.write(pkgbuild)
 
 def parse(pattern: re.Pattern, pkgbuild: str) -> Optional[str]:
     m = pattern.search(pkgbuild)
@@ -51,26 +50,22 @@ def main():
     print('==> Updating packages')
     for pkg in pkgs:
         pkgbuild = fetch_pkgbuild(pkg)
-        if pkgbuild is None:
-            print(f'Could not find PKGBUILD for {pkg}. Skipping...')
-            continue
-
         local_pkgbuild = read_local_pkgbuild(pkg)
 
         local_pkgver = parse(PKGVER, local_pkgbuild)
         local_pkgrel = parse(PKGREL, local_pkgbuild)
 
-        aur_pkgver = parse(PKGVER, pkgbuild)
-        aur_pkgrel = parse(PKGREL, pkgbuild)
+        pkgver = parse(PKGVER, pkgbuild)
+        pkgrel = parse(PKGREL, pkgbuild)
 
         local_verrel = f'{local_pkgver}-{local_pkgrel}'
-        aur_verrel = f'{aur_pkgver}-{aur_pkgrel}'
+        verrel = f'{pkgver}-{pkgrel}'
 
-        if local_verrel < aur_verrel:
-            print(f'{pkg}: {local_verrel} -> {aur_verrel}')
+        if local_verrel < verrel:
+            print(f'{pkg}: {local_verrel} -> {verrel}')
 
-            local_pkgbuild = update(PKGVER, aur_pkgver, local_pkgbuild)
-            local_pkgbuild = update(PKGREL, aur_pkgrel, local_pkgbuild)
+            local_pkgbuild = update(PKGVER, pkgver, local_pkgbuild)
+            local_pkgbuild = update(PKGREL, pkgrel, local_pkgbuild)
 
             write_local_pkgbuild(local_pkgbuild, pkg)
         else:
