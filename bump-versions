@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from pathlib import Path
+
 import re
 from typing import Optional
 import urllib.request
@@ -16,33 +17,25 @@ def read_packages() -> list[str]:
     with open(ROOT / 'packages.txt', 'r') as f:
         return [l.strip() for l in f.readlines() if l.strip() and not l.startswith('#')]
 
-def fetch_arch_pkgbuild(pkg: str) -> Optional[str]:
+def fetch_pkgbuild(pkg: str) -> Optional[str]:
     try:
-        with urllib.request.urlopen(f'https://gitlab.archlinux.org/archlinux/packaging/packages/-/raw/main/{pkg}/PKGBUILD') as f:
+        with urllib.request.urlopen(f'https://gitlab.archlinux.org/archlinux/packaging/packages/{pkg}/-/raw/main/PKGBUILD') as f:
             return f.read().decode('utf-8')
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            return None  # Package not found in Arch Linux repositories
-        else:
-            raise
+    except urllib.error.HTTPError:
+        print(f'PKGBUILD for {pkg} not found on GitLab, trying AUR')
+        return fetch_aur_pkgbuild(pkg)
 
-def fetch_aur_pkgbuild(pkg: str) -> Optional[str]:
-    try:
-        with urllib.request.urlopen(f'https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h={pkg}') as f:
-            return f.read().decode('utf-8')
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            return None  # Package not found in AUR
-        else:
-            raise
+def fetch_aur_pkgbuild(pkg: str) -> str:
+    with urllib.request.urlopen(f'https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h={pkg}') as f:
+        return f.read().decode('utf-8')
 
 def read_local_pkgbuild(pkg: str) -> str:
     with open(ROOT / pkg / 'PKGBUILD', 'r') as f:
         return f.read()
 
-def write_local_pkgbuild(pkgbuild: str, pkg: str) -> str:
+def write_local_pkgbuild(pkgbuild: str, pkg: str) -> None:
     with open(ROOT / pkg / 'PKGBUILD', 'w') as f:
-        return f.write(pkgbuild)
+        f.write(pkgbuild)
 
 def parse(pattern: re.Pattern, pkgbuild: str) -> Optional[str]:
     m = pattern.search(pkgbuild)
@@ -57,16 +50,10 @@ def main():
 
     print('==> Updating packages')
     for pkg in pkgs:
-        arch_pkgbuild = fetch_arch_pkgbuild(pkg)
-        if arch_pkgbuild is not None:
-            pkgbuild = arch_pkgbuild
-        else:
-            aur_pkgbuild = fetch_aur_pkgbuild(pkg)
-            if aur_pkgbuild is None:
-                print(f'{pkg}: Package not found in Arch Linux repositories or AUR')
-                continue
-            else:
-                pkgbuild = aur_pkgbuild
+        pkgbuild = fetch_pkgbuild(pkg)
+        if pkgbuild is None:
+            print(f'Could not find PKGBUILD for {pkg}. Skipping...')
+            continue
 
         local_pkgbuild = read_local_pkgbuild(pkg)
 
