@@ -6,7 +6,7 @@
 pkgbase=cockpit
 pkgname=(cockpit cockpit-packagekit cockpit-pcp cockpit-storaged)
 pkgver=314
-pkgrel=1
+pkgrel=2
 pkgdesc='A systemd web based user interface for Linux servers'
 arch=('x86_64' 'aarch64')
 url='https://cockpit-project.org/'
